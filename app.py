@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 import os
 import requests
 import soundfile as sf
+import io
 
 # Load environment variables from .env
 load_dotenv()
@@ -13,25 +14,21 @@ ULTRAVOX_URL = os.getenv("ULTRAVOX_URL")
 
 app = FastAPI()
 
-@app.get("/favicon.ico")
-async def favicon():
-    return {"message": "No favicon set"}
-
 @app.get("/")
 async def read_root():
     return {"message": "Welcome to your FastAPI application!"}
 
 @app.post("/transcribe_and_reply/")
 async def transcribe_and_reply(file: UploadFile = File(...)):
-    # Save audio file locally
-    audio_data, samplerate = sf.read(file.file)
-    audio_path = "temp_audio.wav"
-    sf.write(audio_path, audio_data, samplerate)
+    # Read the audio data directly from the uploaded file
+    audio_data, samplerate = sf.read(io.BytesIO(file.file.read()))
 
-    # Upload to your S3 bucket or temporary hosting service
-    audio_url = "https://your-temp-host/audio.wav"  # Replace with actual logic to upload to S3
+    # Convert audio data to a WAV format in memory
+    buffer = io.BytesIO()
+    sf.write(buffer, audio_data, samplerate, format='WAV')
+    buffer.seek(0)
 
-    # Send request to UltraVox
+    # Send the audio data to UltraVox
     payload = {
         "model": "ultravox",
         "messages": [
@@ -39,7 +36,7 @@ async def transcribe_and_reply(file: UploadFile = File(...)):
                 "role": "user",
                 "content": [
                     {"text": "For like Michigan,", "type": "text"},
-                    {"type": "audio_url", "audio_url": {"url": audio_url}}
+                    {"type": "audio_url", "audio_url": {"url": "data:audio/wav;base64," + buffer.read().decode('utf-8')}}
                 ]
             }
         ]
