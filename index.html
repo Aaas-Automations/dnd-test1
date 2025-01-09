@@ -32,6 +32,27 @@
             border-radius: 5px;
             text-align: left;
         }
+        .recording-indicator {
+            margin-top: 10px;
+            color: red;
+            font-weight: bold;
+            display: none; /* Initially hidden */
+        }
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(0, 0, 0, 0.3);
+            border-radius: 50%;
+            border-top-color: red;
+            animation: spin 1s infinite linear;
+            margin-left: 5px;
+        }
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
     </style>
 </head>
 <body>
@@ -41,6 +62,9 @@
         <button id="start-recording">Start Recording</button>
         <button id="stop-recording" disabled>Stop Recording</button>
         <audio id="response-audio" controls style="display:none;"></audio>
+        <div class="recording-indicator" id="recording-indicator">
+            Recording...<div class="spinner"></div>
+        </div>
         <div class="response" id="response"></div>
     </div>
 
@@ -52,12 +76,14 @@
         const stopButton = document.getElementById('stop-recording');
         const responseDiv = document.getElementById('response');
         const responseAudio = document.getElementById('response-audio');
+        const recordingIndicator = document.getElementById('recording-indicator');
 
         // Start recording
         startButton.addEventListener('click', async () => {
             startButton.disabled = true;
             stopButton.disabled = false;
             responseDiv.innerHTML = '';
+            recordingIndicator.style.display = 'block'; // Show the recording indicator
 
             // Request microphone access
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -75,6 +101,7 @@
         stopButton.addEventListener('click', async () => {
             stopButton.disabled = true;
             startButton.disabled = false;
+            recordingIndicator.style.display = 'none'; // Hide the recording indicator
 
             mediaRecorder.stop();
             mediaRecorder.onstop = async () => {
