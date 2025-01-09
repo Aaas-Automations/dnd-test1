@@ -7,6 +7,7 @@ import requests
 import soundfile as sf
 import io
 import base64
+from pydub import AudioSegment
 
 # Load environment variables
 load_dotenv()
@@ -20,7 +21,7 @@ app = FastAPI()
 # Enable CORS for frontend communication
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Update this to restrict access to specific origins
+    allow_origins=["*"],  # Allow all origins for testing purposes
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -32,14 +33,19 @@ async def transcribe_and_reply(file: UploadFile = File(...)):
         # Read the uploaded file
         audio_bytes = await file.read()
         
-        # Validate the file format using soundfile
+        # Validate and convert the file to WAV using pydub
         try:
-            audio_data, samplerate = sf.read(io.BytesIO(audio_bytes))
-        except sf.LibsndfileError:
-            return JSONResponse(content={"error": "Invalid audio file. Please upload a valid WAV file."}, status_code=400)
+            audio = AudioSegment.from_file(io.BytesIO(audio_bytes))
+        except Exception as e:
+            return JSONResponse(content={"error": f"Invalid audio file: {str(e)}"}, status_code=400)
+
+        # Convert audio to WAV format and save in-memory
+        buffer = io.BytesIO()
+        audio.export(buffer, format="wav")
+        buffer.seek(0)
 
         # Encode the audio file as Base64 for UltraVox
-        audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
+        audio_base64 = base64.b64encode(buffer.read()).decode("utf-8")
 
         # Prepare the payload for UltraVox API
         payload = {
