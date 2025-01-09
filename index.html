@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UltraVox Interaction</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: auto;
+            text-align: center;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 10px;
+            background-color: #007BFF;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .response {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            text-align: left;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>UltraVox Interaction</h1>
+        <p>Record your message and get a response as audio!</p>
+        <button id="start-recording">Start Recording</button>
+        <button id="stop-recording" disabled>Stop Recording</button>
+        <audio id="response-audio" controls style="display:none;"></audio>
+        <div class="response" id="response"></div>
+    </div>
+
+    <script>
+        let mediaRecorder;
+        let audioChunks = [];
+
+        const startButton = document.getElementById('start-recording');
+        const stopButton = document.getElementById('stop-recording');
+        const responseDiv = document.getElementById('response');
+        const responseAudio = document.getElementById('response-audio');
+
+        // Start recording
+        startButton.addEventListener('click', async () => {
+            startButton.disabled = true;
+            stopButton.disabled = false;
+            responseDiv.innerHTML = '';
+
+            // Request microphone access
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+
+            // Capture audio chunks
+            mediaRecorder.ondataavailable = (event) => {
+                audioChunks.push(event.data);
+            };
+
+            mediaRecorder.start();
+        });
+
+        // Stop recording
+        stopButton.addEventListener('click', async () => {
+            stopButton.disabled = true;
+            startButton.disabled = false;
+
+            mediaRecorder.stop();
+            mediaRecorder.onstop = async () => {
+                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                audioChunks = []; // Clear chunks
+
+                // Show loading message
+                responseDiv.innerHTML = '<p>Processing...</p>';
+
+                // Prepare the form data
+                const formData = new FormData();
+                formData.append('file', audioBlob, 'recording.wav');
+
+                try {
+                    // Make a POST request to your FastAPI endpoint
+                    const response = await fetch('https://protective-joanie-altramanera-38d5f746.koyeb.app/transcribe_and_reply/', {
+                        method: 'POST',
+                        body: formData,
+                    });
+
+                    if (response.ok) {
+                        const result = await response.json();
+
+                        // Play the response audio
+                        const audioURL = URL.createObjectURL(new Blob([result.audio], { type: 'audio/wav' }));
+                        responseAudio.src = audioURL;
+                        responseAudio.style.display = 'block';
+                        responseAudio.play();
+
+                        responseDiv.innerHTML = '<p>Message received! Playing response.</p>';
+                    } else {
+                        responseDiv.innerHTML = `<p>Error: ${response.statusText}</p>`;
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    responseDiv.innerHTML = '<p>Error: Unable to connect to the server.</p>';
+                }
+            };
+        });
+    </script>
+</body>
+</html>
