@@ -6,3 +6,4 @@ soundfile
 pydub
 aiofiles
 python-multipart
+http-server

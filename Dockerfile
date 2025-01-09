@@ -1,21 +1,17 @@
-# Base image
+# Use a lightweight Python image
 FROM python:3.12-slim
 
-# Install FFmpeg and other dependencies
-RUN apt-get update && apt-get install -y ffmpeg && apt-get clean
-
 # Set the working directory
-WORKDIR /app
+WORKDIR /
 
-# Copy requirements and install dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy the frontend files
+COPY fe/ ./fe
 
-# Copy the rest of the application code
-COPY . .
+# Copy the Python server script
+COPY serve.py .
 
-# Expose the application port
+# Expose port 8080
 EXPOSE 8080
 
-# Command to run the application
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
+# Run the Python server
+CMD ["python", "serve.py"]
