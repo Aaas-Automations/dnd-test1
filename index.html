@@ -117,16 +117,13 @@
 
                 try {
                     // Make a POST request to your FastAPI endpoint
-                    const response = await fetch('https://protective-joanie-altramanera-38d5f746.koyeb.app/transcribe_and_reply/', {
+                    const response = await fetch('http://127.0.0.1:8000/transcribe_and_reply/', {
                         method: 'POST',
                         body: formData,
                     });
 
                     if (response.ok) {
-                        const result = await response.json();
-
-                        // Play the response audio
-                        const audioURL = URL.createObjectURL(new Blob([result.audio], { type: 'audio/wav' }));
+                        const audioURL = await response.url;
                         responseAudio.src = audioURL;
                         responseAudio.style.display = 'block';
                         responseAudio.play();
