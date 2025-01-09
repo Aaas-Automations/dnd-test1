@@ -5,3 +5,4 @@ requests
 soundfile
 pydub
 aiofiles
+python-multipart
