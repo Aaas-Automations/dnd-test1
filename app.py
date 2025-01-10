@@ -112,11 +112,7 @@ async def transcribe_and_reply(file: UploadFile = File(...)):
         }
 
         # Make request to UltraVox API
-        logger.debug("Sending request to UltraVox API")
-        headers = {
-            "Authorization": f"Api-Key {ULTRAVOX_API_KEY}",
-            "Content-Type": "application/json"
-        }
+        logger.debug("Checking UltraVox configuration")
         
         if not ULTRAVOX_API_KEY:
             logger.error("ULTRAVOX_API_KEY not configured")
@@ -124,6 +120,19 @@ async def transcribe_and_reply(file: UploadFile = File(...)):
                 content={"error": "ULTRAVOX_API_KEY not configured"},
                 status_code=500
             )
+            
+        if not ULTRAVOX_URL:
+            logger.error("ULTRAVOX_URL not configured")
+            return JSONResponse(
+                content={"error": "ULTRAVOX_URL not configured"},
+                status_code=500
+            )
+            
+        logger.debug(f"Sending request to UltraVox API at {ULTRAVOX_URL}")
+        headers = {
+            "Authorization": f"Api-Key {ULTRAVOX_API_KEY}",
+            "Content-Type": "application/json"
+        }
 
         response = requests.post(
             ULTRAVOX_URL,
