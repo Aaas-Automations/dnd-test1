@@ -26,7 +26,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://your-github-username.github.io",  # Replace with your GitHub Pages domain
+        "https://aaas-automations.github.io",  # Your actual GitHub Pages domain
         "http://localhost:3000",  # For local development
         "http://127.0.0.1:5500",  # For VS Code Live Server
     ],
