@@ -27,6 +27,72 @@ load_dotenv(override=True)
 ULTRAVOX_API_KEY = os.getenv("ULTRAVOX_API_KEY")
 ULTRAVOX_URL = os.getenv("ULTRAVOX_URL")
 DEFAULT_PROMPT = os.getenv("DEFAULT_PROMPT", "For like Michigan")
+ULTRAVOX_MODEL = os.getenv("ULTRAVOX_MODEL", "ultravox-1")
+
+async def call_ultravox_api(audio_base64: str) -> tuple[bytes, dict]:
+    """
+    Call UltraVox API with the processed audio
+    Returns: (response_audio_bytes, response_info)
+    """
+    try:
+        # Structure payload according to API requirements
+        payload = {
+            "model": ULTRAVOX_MODEL,  # Add the model field
+            "messages": [
+                {
+                    "role": "system",
+                    "content": f"content: {DEFAULT_PROMPT}\naudio_data: {audio_base64}"
+                }
+            ]
+        }
+
+        headers = {
+            "Authorization": f"Api-Key {ULTRAVOX_API_KEY}",
+            "Content-Type": "application/json"
+        }
+
+        logger.debug(f"Sending request to UltraVox API with payload keys: {list(payload.keys())}")
+        
+        response = requests.post(
+            ULTRAVOX_URL,
+            headers=headers,
+            json=payload,
+            timeout=30
+        )
+
+        if response.status_code != 200:
+            error_detail = None
+            try:
+                error_detail = response.json()
+                logger.error(f"UltraVox API error detail: {error_detail}")
+            except:
+                error_detail = response.text
+                logger.error(f"UltraVox API error text: {error_detail}")
+
+            if response.status_code == 400:
+                # Log additional debugging info
+                logger.error(f"Request payload structure: {payload}")
+                
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"UltraVox API error: {error_detail}"
+            )
+
+        response_data = response.json()
+        
+        # Extract audio response carefully
+        if not isinstance(response_data, dict):
+            raise ValueError(f"Unexpected response format: {type(response_data)}")
+            
+        response_audio = response_data.get("audio")
+        if not response_audio:
+            raise ValueError("No audio in UltraVox response")
+
+        return base64.b64decode(response_audio), response_data
+
+    except requests.RequestException as e:
+        logger.error(f"Request error to UltraVox API: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=503, detail=f"UltraVox API connection error: {str(e)}")
 
 # Validate required environment variables
 if not ULTRAVOX_API_KEY:
