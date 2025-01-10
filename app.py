@@ -93,18 +93,19 @@ async def process_audio_file(file_bytes: bytes, content_type: str) -> tuple[byte
         logger.error(f"Error processing audio: {str(e)}", exc_info=True)
         raise AudioProcessingError(f"Failed to process audio: {str(e)}")
 
+
 async def call_ultravox_api(audio_base64: str) -> tuple[bytes, dict]:
     """
     Call UltraVox API with the processed audio
     Returns: (response_audio_bytes, response_info)
     """
     try:
+        # Structure payload according to API requirements
         payload = {
             "messages": [
                 {
-                    "role": "user",
-                    "content": DEFAULT_PROMPT,
-                    "audio": audio_base64
+                    "role": "system",
+                    "content": f"content: {DEFAULT_PROMPT}\naudio_data: {audio_base64}"
                 }
             ]
         }
@@ -114,6 +115,8 @@ async def call_ultravox_api(audio_base64: str) -> tuple[bytes, dict]:
             "Content-Type": "application/json"
         }
 
+        logger.debug(f"Sending request to UltraVox API with payload structure: {payload.keys()}")
+        
         response = requests.post(
             ULTRAVOX_URL,
             headers=headers,
@@ -125,28 +128,32 @@ async def call_ultravox_api(audio_base64: str) -> tuple[bytes, dict]:
             error_detail = None
             try:
                 error_detail = response.json()
+                logger.error(f"UltraVox API error detail: {error_detail}")
             except:
                 error_detail = response.text
+                logger.error(f"UltraVox API error text: {error_detail}")
 
-            logger.error(f"UltraVox API error: {error_detail}")
             raise HTTPException(
                 status_code=response.status_code,
                 detail=f"UltraVox API error: {error_detail}"
             )
 
         response_data = response.json()
-        response_audio = response_data.get("audio")
         
+        # Extract audio response carefully
+        if not isinstance(response_data, dict):
+            raise ValueError(f"Unexpected response format: {type(response_data)}")
+            
+        response_audio = response_data.get("audio")
         if not response_audio:
             raise ValueError("No audio in UltraVox response")
 
-        audio_bytes = base64.b64decode(response_audio)
-        return audio_bytes, response_data
+        return base64.b64decode(response_audio), response_data
 
     except requests.RequestException as e:
         logger.error(f"Request error to UltraVox API: {str(e)}", exc_info=True)
         raise HTTPException(status_code=503, detail=f"UltraVox API connection error: {str(e)}")
-
+    
 @app.get("/")
 async def health_check():
     """Health check endpoint"""
