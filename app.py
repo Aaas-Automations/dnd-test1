@@ -1,7 +1,8 @@
 # app.py
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.logger import logger as fastapi_logger
 from dotenv import load_dotenv
 import os
 import requests
@@ -9,17 +10,29 @@ import io
 import base64
 from pydub import AudioSegment
 import logging
+import json
+from typing import Optional
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
-# Load environment variables if .env exists
+# Load environment variables
 load_dotenv(override=True)
 
-# Access environment variables - Koyeb will provide these
+# Environment variables
 ULTRAVOX_API_KEY = os.getenv("ULTRAVOX_API_KEY")
 ULTRAVOX_URL = os.getenv("ULTRAVOX_URL")
+DEFAULT_PROMPT = os.getenv("DEFAULT_PROMPT", "For like Michigan")
+
+# Validate required environment variables
+if not ULTRAVOX_API_KEY:
+    raise ValueError("ULTRAVOX_API_KEY environment variable is required")
+if not ULTRAVOX_URL:
+    raise ValueError("ULTRAVOX_URL environment variable is required")
 
 app = FastAPI(
     title="UltraVox Audio Service",
@@ -27,100 +40,75 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Enable CORS for GitHub Pages
+# CORS configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://aaas-automations.github.io",  # Your GitHub Pages domain
-        "http://localhost:3000",  # For local development
-        "http://127.0.0.1:5500",  # For VS Code Live Server
+        "https://aaas-automations.github.io",
+        "http://localhost:3000",
+        "http://127.0.0.1:5500",
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-@app.get("/")
-async def root():
-    """Health check endpoint"""
-    logger.info("Health check endpoint accessed")
-    return {"status": "healthy", "service": "UltraVox Audio Service"}
+class AudioProcessingError(Exception):
+    """Custom exception for audio processing errors"""
+    pass
 
-@app.post("/transcribe_and_reply/")
-async def transcribe_and_reply(file: UploadFile = File(...)):
-    """Endpoint to handle audio transcription and response generation"""
-    logger.info(f"Received file: {file.filename}, content_type: {file.content_type}")
-    
+async def process_audio_file(file_bytes: bytes, content_type: str) -> tuple[bytes, dict]:
+    """
+    Process uploaded audio file and convert to required format
+    Returns: (processed_audio_bytes, audio_info)
+    """
     try:
-        # Read the uploaded file
-        logger.debug("Reading uploaded file")
-        audio_bytes = await file.read()
-        logger.info(f"Read {len(audio_bytes)} bytes from uploaded file")
+        # Load audio file using pydub
+        audio = AudioSegment.from_file(io.BytesIO(file_bytes), format="webm")
         
-        # Log file details
-        logger.debug(f"File content first 100 bytes (hex): {audio_bytes[:100].hex()}")
-        
-        # Validate and convert the file to WAV using pydub
-        try:
-            logger.debug("Attempting to convert audio with pydub")
-            # Explicitly specify format as webm
-            audio = AudioSegment.from_file(io.BytesIO(audio_bytes), format="webm")
-            logger.info(f"Audio properties - Channels: {audio.channels}, Sample width: {audio.sample_width}, Frame rate: {audio.frame_rate}, Duration: {len(audio)}ms")
-        except Exception as e:
-            logger.error(f"Error converting audio: {str(e)}")
-            return JSONResponse(
-                content={
-                    "error": "Invalid audio file",
-                    "details": str(e),
-                    "content_type": file.content_type,
-                    "file_size": len(audio_bytes)
-                },
-                status_code=400
-            )
+        # Log audio properties
+        audio_info = {
+            "channels": audio.channels,
+            "sample_width": audio.sample_width,
+            "frame_rate": audio.frame_rate,
+            "duration_ms": len(audio)
+        }
+        logger.info(f"Audio properties: {audio_info}")
 
-        # Convert audio to WAV format with specific parameters
-        logger.debug("Converting to WAV format")
+        # Convert to required format (16kHz mono WAV)
+        audio = audio.set_channels(1)
+        audio = audio.set_frame_rate(16000)
+        
+        # Export to WAV
         buffer = io.BytesIO()
-        # Set specific audio properties before export
-        audio = audio.set_channels(1)  # Convert to mono
-        audio = audio.set_frame_rate(16000)  # Set sample rate to 16kHz
         audio.export(buffer, format="wav", parameters=[
-            "-acodec", "pcm_s16le",  # Use standard 16-bit PCM codec
-            "-ac", "1",              # Mono
-            "-ar", "16000"           # 16kHz sample rate
+            "-acodec", "pcm_s16le",
+            "-ac", "1",
+            "-ar", "16000"
         ])
         buffer.seek(0)
-        wav_bytes = buffer.read()
-        logger.info(f"Converted WAV size: {len(wav_bytes)} bytes")
+        return buffer.read(), audio_info
 
-        # Encode as Base64
-        audio_base64 = base64.b64encode(wav_bytes).decode("utf-8")
-        logger.info(f"Base64 encoded length: {len(audio_base64)}")
+    except Exception as e:
+        logger.error(f"Error processing audio: {str(e)}", exc_info=True)
+        raise AudioProcessingError(f"Failed to process audio: {str(e)}")
 
-        # Prepare UltraVox payload for Baseten
+async def call_ultravox_api(audio_base64: str) -> tuple[bytes, dict]:
+    """
+    Call UltraVox API with the processed audio
+    Returns: (response_audio_bytes, response_info)
+    """
+    try:
         payload = {
-            "audio": audio_base64,
-            "text": "For like Michigan"
+            "messages": [
+                {
+                    "role": "user",
+                    "content": DEFAULT_PROMPT,
+                    "audio": audio_base64
+                }
+            ]
         }
 
-        # Make request to UltraVox API
-        logger.debug("Checking UltraVox configuration")
-        
-        if not ULTRAVOX_API_KEY:
-            logger.error("ULTRAVOX_API_KEY not configured")
-            return JSONResponse(
-                content={"error": "ULTRAVOX_API_KEY not configured"},
-                status_code=500
-            )
-            
-        if not ULTRAVOX_URL:
-            logger.error("ULTRAVOX_URL not configured")
-            return JSONResponse(
-                content={"error": "ULTRAVOX_URL not configured"},
-                status_code=500
-            )
-            
-        logger.debug(f"Sending request to UltraVox API at {ULTRAVOX_URL}")
         headers = {
             "Authorization": f"Api-Key {ULTRAVOX_API_KEY}",
             "Content-Type": "application/json"
@@ -132,68 +120,93 @@ async def transcribe_and_reply(file: UploadFile = File(...)):
             json=payload,
             timeout=30
         )
-        
-        logger.info(f"UltraVox API response status: {response.status_code}")
+
         if response.status_code != 200:
-            logger.error(f"UltraVox API error response: {response.text}")
-            return JSONResponse(
-                content={
-                    "error": "Failed to connect to UltraVox API",
-                    "details": response.text
-                },
-                status_code=response.status_code
+            error_detail = None
+            try:
+                error_detail = response.json()
+            except:
+                error_detail = response.text
+
+            logger.error(f"UltraVox API error: {error_detail}")
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"UltraVox API error: {error_detail}"
             )
 
-        # Get response audio
         response_data = response.json()
-        logger.debug(f"API response structure: {response_data.keys()}")
-        response_audio_base64 = response_data.get("audio")
+        response_audio = response_data.get("audio")
         
-        if not response_audio_base64:
-            logger.error("No audio in UltraVox response")
-            return JSONResponse(
-                content={"error": "No audio response received from UltraVox"},
-                status_code=500
-            )
+        if not response_audio:
+            raise ValueError("No audio in UltraVox response")
 
-        # Decode response audio
-        try:
-            response_audio = base64.b64decode(response_audio_base64)
-            logger.info(f"Decoded response audio size: {len(response_audio)} bytes")
-        except Exception as e:
-            logger.error(f"Error decoding response audio: {str(e)}")
-            return JSONResponse(
-                content={
-                    "error": "Failed to decode audio response",
-                    "details": str(e)
-                },
-                status_code=500
-            )
+        audio_bytes = base64.b64decode(response_audio)
+        return audio_bytes, response_data
 
+    except requests.RequestException as e:
+        logger.error(f"Request error to UltraVox API: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=503, detail=f"UltraVox API connection error: {str(e)}")
+
+@app.get("/")
+async def health_check():
+    """Health check endpoint"""
+    return {
+        "status": "healthy",
+        "service": "UltraVox Audio Service",
+        "version": "1.0.0"
+    }
+
+@app.post("/transcribe_and_reply/")
+async def transcribe_and_reply(file: UploadFile = File(...)):
+    """
+    Process audio file and get response from UltraVox
+    """
+    try:
+        logger.info(f"Received file: {file.filename}, content_type: {file.content_type}")
+        
+        # Read uploaded file
+        audio_bytes = await file.read()
+        logger.info(f"Read {len(audio_bytes)} bytes from uploaded file")
+
+        # Process audio file
+        processed_audio, audio_info = await process_audio_file(audio_bytes, file.content_type)
+        logger.info(f"Processed audio size: {len(processed_audio)} bytes")
+
+        # Convert to base64
+        audio_base64 = base64.b64encode(processed_audio).decode("utf-8")
+        
+        # Call UltraVox API
+        response_audio, response_info = await call_ultravox_api(audio_base64)
+        
         # Return audio response
         audio_io = io.BytesIO(response_audio)
-        logger.info("Sending audio response")
         return FileResponse(
             audio_io,
             media_type="audio/wav",
             filename="response.wav",
-            headers={
-                "Content-Disposition": "attachment; filename=response.wav"
-            }
+            headers={"Content-Disposition": "attachment; filename=response.wav"}
         )
 
+    except AudioProcessingError as e:
+        logger.error(str(e))
+        return JSONResponse(
+            content={"error": "Audio processing error", "details": str(e)},
+            status_code=400
+        )
+    
+    except HTTPException as e:
+        # Re-raise FastAPI HTTP exceptions
+        raise e
+    
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}", exc_info=True)
         return JSONResponse(
-            content={
-                "error": "An unexpected error occurred",
-                "details": str(e)
-            },
+            content={"error": "Server error", "details": str(e)},
             status_code=500
         )
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv("PORT", 8000))
+    port = int(os.getenv("PORT", 8080))
     logger.info(f"Starting server on port {port}")
     uvicorn.run("app:app", host="0.0.0.0", port=port, reload=False)
