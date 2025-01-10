@@ -97,18 +97,10 @@ async def transcribe_and_reply(file: UploadFile = File(...)):
         audio_base64 = base64.b64encode(wav_bytes).decode("utf-8")
         logger.info(f"Base64 encoded length: {len(audio_base64)}")
 
-        # Prepare UltraVox payload
+        # Prepare UltraVox payload for Baseten
         payload = {
-            "model": "ultravox",
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"text": "For like Michigan,", "type": "text"},
-                        {"type": "audio_blob", "audio_blob": audio_base64}
-                    ]
-                }
-            ]
+            "audio": audio_base64,
+            "text": "For like Michigan"
         }
 
         # Make request to UltraVox API
@@ -143,7 +135,7 @@ async def transcribe_and_reply(file: UploadFile = File(...)):
         
         logger.info(f"UltraVox API response status: {response.status_code}")
         if response.status_code != 200:
-            logger.error(f"UltraVox API error: {response.text}")
+            logger.error(f"UltraVox API error response: {response.text}")
             return JSONResponse(
                 content={
                     "error": "Failed to connect to UltraVox API",
@@ -154,6 +146,7 @@ async def transcribe_and_reply(file: UploadFile = File(...)):
 
         # Get response audio
         response_data = response.json()
+        logger.debug(f"API response structure: {response_data.keys()}")
         response_audio_base64 = response_data.get("audio")
         
         if not response_audio_base64:
