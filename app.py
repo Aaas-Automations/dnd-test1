@@ -9,10 +9,10 @@ import io
 import base64
 from pydub import AudioSegment
 
-# Load environment variables
-load_dotenv()
+# Load environment variables if .env exists
+load_dotenv(override=True)
 
-# Access environment variables - Koyeb will provide these
+# Access environment variables - Koyeb will provide these through its own environment
 ULTRAVOX_API_KEY = os.getenv("ULTRAVOX_API_KEY")
 ULTRAVOX_URL = os.getenv("ULTRAVOX_URL")
 
