@@ -1,17 +1,10 @@
-# Use a lightweight Python image
-FROM python:3.12-slim
+FROM python:3.9-slim
 
-# Set the working directory
-WORKDIR /
+WORKDIR /app
 
-# Copy the frontend files
-COPY fe/ ./fe
+COPY requirements.txt .
+RUN pip install -r requirements.txt
 
-# Copy the Python server script
-COPY serve.py .
+COPY . .
 
-# Expose port 8080
-EXPOSE 8080
-
-# Run the Python server
-CMD ["python", "serve.py"]
+CMD ["python", "main.py"]

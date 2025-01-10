@@ -1,9 +1,6 @@
-fastapi
-uvicorn
-python-dotenv
-requests
-soundfile
-pydub
-aiofiles
-python-multipart
-http-server
+fastapi==0.104.1
+python-multipart==0.0.6
+uvicorn==0.24.0
+python-dotenv==1.0.0
+requests==2.31.0
+pydub==0.25.1
