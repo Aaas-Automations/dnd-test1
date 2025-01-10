@@ -63,7 +63,8 @@ async def transcribe_and_reply(file: UploadFile = File(...)):
         # Validate and convert the file to WAV using pydub
         try:
             logger.debug("Attempting to convert audio with pydub")
-            audio = AudioSegment.from_file(io.BytesIO(audio_bytes))
+            # Explicitly specify format as webm
+            audio = AudioSegment.from_file(io.BytesIO(audio_bytes), format="webm")
             logger.info(f"Audio properties - Channels: {audio.channels}, Sample width: {audio.sample_width}, Frame rate: {audio.frame_rate}, Duration: {len(audio)}ms")
         except Exception as e:
             logger.error(f"Error converting audio: {str(e)}")
@@ -77,10 +78,17 @@ async def transcribe_and_reply(file: UploadFile = File(...)):
                 status_code=400
             )
 
-        # Convert audio to WAV format
+        # Convert audio to WAV format with specific parameters
         logger.debug("Converting to WAV format")
         buffer = io.BytesIO()
-        audio.export(buffer, format="wav", parameters=["-ac", "1", "-ar", "16000"])
+        # Set specific audio properties before export
+        audio = audio.set_channels(1)  # Convert to mono
+        audio = audio.set_frame_rate(16000)  # Set sample rate to 16kHz
+        audio.export(buffer, format="wav", parameters=[
+            "-acodec", "pcm_s16le",  # Use standard 16-bit PCM codec
+            "-ac", "1",              # Mono
+            "-ar", "16000"           # 16kHz sample rate
+        ])
         buffer.seek(0)
         wav_bytes = buffer.read()
         logger.info(f"Converted WAV size: {len(wav_bytes)} bytes")
